@@ -1,9 +1,9 @@
-library(rgeos)
-library(sf)
-library(sp)
-library(data.table)
-library(dplyr)
-library(lwgeom)
+suppressMessages(library(rgeos))
+suppressMessages(library(sf))
+suppressMessages(library(sp))
+suppressMessages(library(data.table))
+suppressMessages(library(dplyr))
+suppressMessages(library(lwgeom))
 # gdal_polygonizeR <- function(x, 
 #                              outshape   = NULL, 
 #                              gdalformat = 'ESRI Shapefile',
@@ -55,16 +55,16 @@ postprocessing <- function(in.path,
                            out.path, 
                            dk.thresh)
 {
-  polygon_sf <- st_read(in.path)
+  polygon_sf <- suppressWarnings(st_read(in.path, quiet = TRUE))
   # douglas puecker algorithm
-  polygon_sp_simplify <- gSimplify(as(polygon_sf,"Spatial"), tol = dk.thresh, 
-                                   topologyPreserve = TRUE)
-  polygon_sf$geometry <- st_as_sf(polygon_sp_simplify) 
-  polygon_sf_simplify <- st_sf(data.frame(polygon_sf$id, geom = st_as_sf(polygon_sp_simplify))) %>% st_make_valid %>% st_collection_extract("POLYGON")
+  polygon_sp_simplify <- suppressMessages(gSimplify(as(polygon_sf,"Spatial"), tol = dk.thresh, 
+                                   topologyPreserve = TRUE))
+  polygon_sf$geometry <- suppressMessages(st_as_sf(polygon_sp_simplify)) 
+  polygon_sf_simplify <- suppressMessages(st_sf(data.frame(polygon_sf$id, geom = st_as_sf(polygon_sp_simplify))) %>% st_make_valid %>% st_collection_extract("POLYGON"))
   
-  polygon_sfc_valid <- polygon_sf_simplify[polygon_sf_simplify$polygon_sf.id!=0,]
+  polygon_sfc_valid <- suppressMessages(polygon_sf_simplify[polygon_sf_simplify$polygon_sf.id!=0,])
   
-  st_write(polygon_sfc_valid, out.path, delete_layer = TRUE)
+  suppressMessages(st_write(polygon_sfc_valid, out.path, delete_layer = TRUE))
 } 
 
 # labelmap <- raster(file.path(paste0("/home/su/Documents/Jupyter/Segmetation_ARS_results/"
@@ -87,11 +87,8 @@ dk.thresh <- as.numeric(arg[3])
 
 if(file.exists(out.path)){
   file.remove(out.path)
-  file.remove(gsub("shp", "shx", out.path))
-  file.remove(gsub("shp", "prj", out.path))
-  file.remove(gsub("shp", "dbf", out.path))
 }
   
-postprocessing(in.path = in.path, out.path = out.path, 
-               dk.thresh = dk.thresh)
+suppressMessages(postprocessing(in.path = in.path, out.path = out.path, 
+               		dk.thresh = dk.thresh))
 
