@@ -70,7 +70,8 @@ postprocessing <- function(in.path,
 # labelmap <- raster(file.path(paste0("/home/su/Documents/Jupyter/Segmetation_ARS_results/"
 #                                     ,"Dollo_Ethiopia_watershed_2500_001.tif")))
 
-
+# turn off warning globally
+options(warn=-1)
 
 arg <- commandArgs(TRUE)
 

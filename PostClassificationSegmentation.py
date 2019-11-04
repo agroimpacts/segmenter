@@ -691,7 +691,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
         segments_watershed_merge[segments_watershed_merge == 9999] = nofield_id
 
     out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
-    gdal_save_file_tif_1bands(outpath, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
+    gdal_save_file_tif_1bands(out_path, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
                               cols - 2 * buf)
 
     # STEP 5
@@ -743,7 +743,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
         os.remove(out_path)
         out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
         os.remove(out_path)
-        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_merge_sieve_overlap.geojson'.format(tile_id, season))
+        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_sieve_merge_overlap.geojson'.format(tile_id, season))
         os.remove(out_path)
 
 
@@ -778,8 +778,8 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
                                                                        dry_lower_ordinal, dry_upper_ordinal)
     uri_composite_gdal_gs = "/vsis3/{}/{}/{}/tile{}_{}_{}.tif".format(s3_bucket, planet_directory, 'GS', tile_id,
                                                                        wet_lower_ordinal, wet_upper_ordinal)
-    uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
-
+    uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}_8_run0_iteration4.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
+    #uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
     # segmentation for off-season
     segmentation_season(tile_id, 'OS', uri_composite_gdal_os, uri_prob_gdal, working_dir, mmu, maximum_field_size,
                         prob_threshold, buf, logger, verbose)
