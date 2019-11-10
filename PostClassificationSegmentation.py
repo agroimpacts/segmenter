@@ -156,9 +156,11 @@ def merge_hierarchical_customized(labels, rag, thresh, rag_copy, in_place_merge,
                 be_mergy = False
             else:
                 if rag.nodes[n1]['pixel count'] is not 0 and rag.nodes[n2]['pixel count'] is not 0:
-                    shape_idx_1 = 0.25 * perimeter(labels == n1, neighbourhood=4) / np.sqrt(rag.nodes[n1]['pixel count'])
+                    shape_idx_1 = 0.25 * perimeter(np.isin(labels, rag.nodes(data=True)[n1]['labels']), neighbourhood=4) \
+                                  / np.sqrt(rag.nodes[n1]['pixel count'])
                     if shape_idx_1 < _shape_threshold:
-                        shape_idx_2 = 0.25 * perimeter(labels == n2, neighbourhood=4) / np.sqrt(rag.nodes[n2]['pixel count'])
+                        shape_idx_2 = 0.25 * perimeter(np.isin(labels, rag.nodes(data=True)[n2]['labels']), neighbourhood=4) \
+                                      / np.sqrt(rag.nodes[n2]['pixel count'])
                         if shape_idx_2 < _shape_threshold:
                             be_mergy =False
 
@@ -248,9 +250,9 @@ def rag_mean_variance_color(image, labels, _include_texture, connectivity=2, mod
     for n in graph:
         graph.nodes[n].update({'labels': [n],
                                'pixel count': 0,
-                               'total color': np.array([0, 0, 0], dtype=np.double),
-                               'total color square': np.array([0, 0, 0], dtype=np.double),
-                               'variance color': np.array([0, 0, 0], dtype=np.double),
+                               'total color': np.array([0, 0, 0, 0], dtype=np.double),
+                               'total color square': np.array([0, 0, 0, 0], dtype=np.double),
+                               'variance color': np.array([0, 0, 0, 0], dtype=np.double),
                                'shape index': 0})
 
     for index in np.ndindex(labels.shape):
@@ -535,7 +537,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
 
     # STEP 1
     # meanshift algorithm to smooth image and filter out noise
-    B1, b2, b3, b4 = array_composite
+    b1, b2, b3, b4 = array_composite
 
     # scale to int8 for opencv processing
     min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 255))
@@ -596,7 +598,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
 
     # For a 2D image, a connectivity of 1 corresponds to immediate neighbors up, down, left, and right,
     # while a connectivity of 2 also includes diagonal neighbors.
-    segments_watershed = watershed(gradient_subset, markers=3000, connectivity=1, compactness=0).astype(np.int16)
+    segments_watershed = watershed(gradient_subset, markers=3600, connectivity=1, compactness=0).astype(np.int16)
 
     # read metadata info
     metadata = gdal.Open(uri_prob_gdal)
@@ -645,28 +647,23 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
                                                                 .format(tile_id, season)))
 
     # then hierachical merging
-    min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
-    array_original_rescale = np.dstack((min_max_scaler.fit_transform(b2.reshape(cols * rows, 1).astype(np.float32))
-                                        .reshape(cols, rows),
-                                        min_max_scaler.fit_transform(b3.reshape(cols * rows, 1).astype(np.float32))
-                                        .reshape(cols, rows),
-                                        min_max_scaler.fit_transform(b4.reshape(cols * rows, 1).astype(np.float32))
-                                        .reshape(cols, rows)))
-    array_original_subset = array_original_rescale[buf:cols - buf, buf:rows - buf]
+    # min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
+    # array_original_stack = np.dstack((b1, b2, b3, b4))
+    array_original_subset = np.dstack((b1, b2, b3, b4))[buf:cols - buf, buf:rows - buf]
 
-    # calculate adaptive threshold based stand deviation
-    std_band = np.std(array_original_subset[segments_watershed_sieve == 0], axis=0)
+    # calculate adaptive threshold based stand deviation for 'field' pixels
+    std_band = np.std(array_original_subset[segments_watershed_sieve > 0], axis=0)
     vec_std = np.linalg.norm(std_band)
 
     # assign -9999 so background pixels won't be merged
-    array_original_subset[segments_watershed == 0] = [-9999, -9999, -9999]
+    array_original_subset[segments_watershed_sieve == 0] = [-9999, -9999, -9999, -9999]
 
-    g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=2,
+    g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=1,
                                 mode='distance', _include_texture=include_texture)
 
-    segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std,
+    segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std/2,
                                                              rag_copy=False,
-                                                             in_place_merge=True,
+                                                             in_place_merge=False,
                                                              _maximum_fieldsize=maximum_field_size,
                                                              _shape_threshold=shape_threshold,
                                                              _include_texture=include_texture,
@@ -689,7 +686,8 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
         segments_watershed_merge[segments_watershed_merge == 0] = 9999
         segments_watershed_merge[segments_watershed_merge == nofield_id] = 0
         segments_watershed_merge[segments_watershed_merge == 9999] = nofield_id
-
+    
+    # required to save the merged polygon cuz polygonization needs
     out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
     gdal_save_file_tif_1bands(out_path, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
                               cols - 2 * buf)
@@ -718,6 +716,8 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     dst_field = dst_layer.GetLayerDefn().GetFieldIndex("id")
 
     gdal.Polygonize(srcband, None, dst_layer, dst_field, [], callback=None)
+    
+    # release memory
     dst_ds = None  # it guaranttee shapefile is successfully created
     src_ds = None
 
@@ -835,7 +835,6 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, verb
     per_tile_width = 0.005 * 10  # 0.005 degree is the width of cells, 1 tile has 10*10 cells
     working_dir = '/tmp'
     verbose = False
-    maximum_field_size = 200 * 200 # grid size
 
     log_path = '%s/log/segmenter_%s.log' % (os.environ['HOME'], str(aoi))
     logging.basicConfig(filename=log_path, filemode='w', level=logging.INFO)
@@ -856,6 +855,7 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, verb
     prob_directory = params['prob_directory']
     tiles_geojson_path = params['tile_geojson_path']
     mmu = params['mmu']
+    maximum_field_size = params['max_field_size']
     prob_threshold = params['prob_threshold']
     output_s3_prefix = params['output']
     dry_lower_ordinal = params['dry_lower_ordinal']  # 2018/12/01
@@ -920,7 +920,7 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, verb
                 logger.error("reading geojson tile '{}' failed".format(uri_tile))
 
             # here we used merged aoi
-            alltiles = gpd_tile.loc[gpd_tile['merged_aoi'] == float(aoi)]['tile']
+            alltiles = gpd_tile.loc[gpd_tile['production_aoi'] == float(aoi)]['tile']
             # alltiles = gpd_tile.loc[gpd_tile['aoi'] == float(aoi)]['tile']
 
         failure_count = 0
