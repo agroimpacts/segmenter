@@ -39,6 +39,7 @@ import numpy as np
 import math
 import heapq
 from skimage.measure import perimeter
+import sys
 
 
 def _revalidate_node_edges(rag, node, heap_list):
@@ -821,24 +822,39 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
 
 @click.command()
 @click.option('--config_filename', default='segmenter_config.yaml', help='The name of the config to use.')
-@click.option('--tile_id', default=None, help='only used for debug mode, user-defined tile_id')
-@click.option('--csv_pth', default=None, help='csv path for providing a specified tile list')
-@click.option('--aoi', default=None, help='specify production AOI id in ghana_tiles.geojson')
-@click.option('--s3_bucket', default='activemapper', help='s3 bucket name')
-@click.option('--threads_number', default= 4, help='output folder prefix')
-@click.option('--verbose', default= False , help='output folder prefix')
-def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, verbose):
+@click.option('--tile_id', default=None, help='integer, only used for debug mode, user-defined tile_id')
+@click.option('--csv_pth', default=None, help='string, csv path for providing a specified tile list')
+@click.option('--aoi', default=None, help='integer, specify production AOI id in ghana_tiles.geojson')
+@click.option('--s3_bucket', default='string, activemapper', help='s3 bucket name')
+@click.option('--threads_number', default= 4, help='integer, output folder prefix')
+@click.option('--be_minmax_analysis', default = False, help='bool, if extract min and max from worker labels')
+@click.option('--verbose', default= False , help='bool, output folder prefix')
+def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_minmax_analysis, verbose):
     # some constants are defined here
     buf = 11 # buffer of composite image
     left_corner_x = -17.541
     left_corner_y = 37.54
     per_tile_width = 0.005 * 10  # 0.005 degree is the width of cells, 1 tile has 10*10 cells
     working_dir = '/tmp'
-    verbose = False
-
+    
     log_path = '%s/log/segmenter_%s.log' % (os.environ['HOME'], str(aoi))
     logging.basicConfig(filename=log_path, filemode='w', level=logging.INFO)
     logger = logging.getLogger(__name__)
+
+    if be_minmax_analysis is True:
+        command = '/usr/bin/Rscript'
+        path_script = "Preprocessing.R"
+        args = ['1']
+        if os.path.isfile(path_script) is False:
+            logger.error("Fail to find Preprocessing.R")
+
+        # check_output will run the command and store to result
+        cmd = [command, path_script] + args
+        try:
+            x = subprocess.call(cmd, stdout=open(os.devnull, 'wb'))
+        except:
+            logger.error("MinMax Analysis failed!")
+            sys.exit()
 
     # read yaml from local
     with open("/home/ubuntu/source/segmenter_config.yaml", 'r') as yaml_obj:
@@ -856,6 +872,10 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, verb
     tiles_geojson_path = params['tile_geojson_path']
     mmu = params['mmu']
     maximum_field_size = params['max_field_size']
+    if mmu <= 0 or maximum_field_size <= 0:
+        logger.error("Min and max polygon size were not set correctly!")
+        sys.exit()
+
     prob_threshold = params['prob_threshold']
     output_s3_prefix = params['output']
     dry_lower_ordinal = params['dry_lower_ordinal']  # 2018/12/01

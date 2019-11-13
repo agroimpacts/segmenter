@@ -3,9 +3,32 @@ suppressMessages(library(data.table))
 suppressMessages(library(dplyr))
 suppressMessages(library(units))
 suppressMessages(library(sf))
+suppressMessages(library(DBI))
 
 res_perpixel <- 2.5 # approximate resolution in GCS of 3-m resolution
-  
+
+point_to_gridpoly <- function(xy, w, OldCRSobj, NewCRSobj) {
+  dw <- list("x" = c(-w, w, w, -w, -w), "y" = c(w, w, -w, -w, w))
+  pols <- do.call(rbind, lapply(1:nrow(xy), function(i) {  # i <- 1
+    xs <- unlist(sapply(dw$x, function(x) unname(xy[i, "x"] + x)))
+    ys <- unlist(sapply(dw$y, function(x) unname(xy[i, "y"] + x)))
+    p1 <- list(t(sapply(1:length(xs), function(i) c(xs[i], ys[i]))))
+    ## sf, sfc, sfg are three basic classes used to repreesent simple featurtes in sf package 
+    ## see https://cran.r-project.org/web/packages/sf/vignettes/sf1.html
+    ## create a geometry (sfg) from a list of points, e.g., point, polygon, multipolygon
+    pol <- st_polygon(p1)
+    ## create a sfc, which is a list of sfg
+    poldf <- st_sfc(pol)
+    ## create a sf, a table which contains feature atributes and feature geometries (sfc)
+    ## .() is actually just an alias to ‘list()’. It returns a data table, whereas not using ‘.()’ only returns a vector
+    polsf <- st_sf(xy[i, .(name)], geom = poldf)
+    st_crs(polsf) <- OldCRSobj # first set GCS
+    polsf <- st_transform(polsf, crs = NewCRSobj) # then transform into PRS
+    polsf
+  }))
+  return (pols)
+}
+
 preprocessing <- function(
   aoi_id
 )
@@ -14,16 +37,11 @@ preprocessing <- function(
   yaml.dir <- '/home/ubuntu/source/segmenter_config.yaml'
   
   # decide cluster id
-  if(aoi_id < 7)
-  {
+  if(aoi_id < 7){
     cluster_id <- 1
-  }
-  else if (aoi_id == 7 || aoi_id == 8 || aoi_id == 10 || aoi_id == 11)
-  {
+  }else if (aoi_id == 7 || aoi_id == 8 || aoi_id == 10 || aoi_id == 11){
     cluster_id <- 3
-  }
-  else
-  {
+  }else{
     cluster_id <- 2
   }
     
@@ -34,14 +52,16 @@ preprocessing <- function(
   uname <- "postgis"
   dbname <- 'Africa'
   password <- params$mapper$db_password
-  host <- paste0('labeller', str(aoi_id), '.crowdmapper.org')
+  # print(password)
+  # print(aoi_id)
+  host <- paste0('labeller', aoi_id, '.crowdmapper.org')
   # host <- 'ec2-3-229-217-195.compute-1.amazonaws.com'
   con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(), host = host,
                         dbname = dbname,
                         user = uname,
                         password = password)
   
-  aoi_merge <- st_read(tile.aoi)
+  aoi_merge <- suppressMessages(st_read(tile.aoi))
   
   diam <- 0.005 / 2 ## new master grid diameter
   prjsrid <- 102022
@@ -56,8 +76,8 @@ preprocessing <- function(
                       "and label = 'TRUE'")
   label.dynamic <- suppressWarnings(DBI::dbGetQuery(con, label.sql))$name
   
-  # step 1: query grid name in static csv within aoi
-  aoi <- st_read(tile.aoi) %>% filter(production_aoi==aoi_id)
+  # step 2: query grid name in static csv within aoi
+  aoi <- aoi_merge  %>% filter(production_aoi==aoi_id)
   aoi.union <- st_union(aoi)
   
   static_label <- as.character(read.csv(static.cluster.dir)$name)
@@ -72,7 +92,7 @@ preprocessing <- function(
     grid.poly <- point_to_gridpoly(xy = xy_tabs, w = diam, NewCRSobj = gcsstr, 
                                    OldCRSobj = gcsstr)
     
-    if(nrow(st_intersection(grid.poly, aoi.union)) > 0)
+    if(nrow(suppressWarnings(st_intersection(grid.poly, aoi.union))) > 0)
     {
       kmlid
     }
@@ -151,6 +171,7 @@ preprocessing <- function(
   
   # only use dynamic cells that are within each instance (not cluster instance)
   bayes.polys.collection <- lapply(1:length(label.dynamic), function(ii){
+    # print(ii)
     assignment.sql <- paste0("select assignment_id from assignment_data",
                              " INNER JOIN hit_data USING (hit_id)",
                              " where name ='", label.dynamic[ii], 
@@ -160,7 +181,7 @@ preprocessing <- function(
     
     assignmentid <- unlist(assignmentid)
     
-    
+    # query polygons for each assignment
     bayes.polys <- lapply(1:length(assignmentid), function(x) {
       
       # workerid
@@ -200,14 +221,14 @@ preprocessing <- function(
           # to retain those within-grid parts for calculation
           
           if(length(user.poly) == 0){
-            geometry.user = st_polygon()
+            geometry.user <- st_polygon()
           } else {
-            geometry.user = user.poly
+            geometry.user <-  user.poly$geom_clean
           }
         }
         else {
           # if users do not map field, set geometry as empty polygon
-          geometry.user = st_polygon()
+          geometry.user <- st_polygon()
         }  
       } 
       
@@ -216,7 +237,7 @@ preprocessing <- function(
       # bayes.poly will consist two sf rows, the first is that the surely-labeled
       # fields, and the second is that unsure fields
       bayes.poly <- st_sf('prior' = worker.score.dt[worker.score.dt$workid == workerid]$score, 
-                          geometry = st_sfc(user.poly$geom_clean))
+                          geometry = st_sfc(geometry.user))
       
       # set crs
       st_crs(bayes.poly) <- gcsstr
@@ -232,9 +253,12 @@ preprocessing <- function(
   
   bayes.polys.collection.bind <- suppressWarnings(do.call(rbind, bayes.polys.collection))
   
-  min.thres <- sort(st_area(bayes.polys.collection.bind))[round(nrow(bayes.polys.collection.bind) * 0.01)]
+  # select those non-zero polygons for area estimation
+  valid.polys <- st_area(bayes.polys.collection.bind)[as.numeric(st_area(bayes.polys.collection.bind)) > 0]
+
+  min.thres <- sort(valid.polys)[round(length(valid.polys) * 0.01)]
   
-  max.thres <- sort(st_area(bayes.polys.collection.bind))[round(nrow(bayes.polys.collection.bind) * 0.99)]
+  max.thres <- sort(valid.polys)[round(length(valid.polys) * 0.99)]
   
   params$segmenter$mmu <- min.thres / (res_perpixel * res_perpixel)
   
@@ -251,9 +275,9 @@ arg <- commandArgs(TRUE)
 
 if(length(arg) < 1) stop("At least 1 arguments needed", call. = FALSE)
 
-aoi_id <- as.numeric(arg[1])
+aoi_id <- arg[1]
 
-preprocessing(aoi_id = aoi_id)
+suppressMessages(preprocessing(aoi_id = aoi_id))
 
 # hist(as.numeric(st_area(bayes.polys.collection.bind)), 
 #      breaks = seq(0, as.numeric(max(st_area(bayes.polys.collection.bind))), length.out = 200), 
