@@ -638,7 +638,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     # connected small polygons using sieving filter + hierachical merging
 
     # first apply sieving filter, as sieving substantially reduce the node number in graph, thereby improve efficiency
-    cmd = 'gdal_sieve.py -q -st {} -8 {} {}'.format(mmu, os.path.join(working_dir, 'tile{}_{}_watershed_overlap.tif'
+    cmd = 'gdal_sieve.py -q -st {} -8 {} {}'.format(int(mmu), os.path.join(working_dir, 'tile{}_{}_watershed_overlap.tif'
                                                                       .format(tile_id, season)),
                                                          os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve.tif'
                                                                       .format(tile_id, season)))
@@ -662,7 +662,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=1,
                                 mode='distance', _include_texture=include_texture)
 
-    segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std/2,
+    segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std/3,
                                                              rag_copy=False,
                                                              in_place_merge=False,
                                                              _maximum_fieldsize=maximum_field_size,
@@ -821,14 +821,14 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
         logger.error("Segmentation fails: couldn't find {}").format(out_path_wet)
 
 @click.command()
-@click.option('--config_filename', default='segmenter_config.yaml', help='The name of the config to use.')
-@click.option('--tile_id', default=None, help='integer, only used for debug mode, user-defined tile_id')
-@click.option('--csv_pth', default=None, help='string, csv path for providing a specified tile list')
-@click.option('--aoi', default=None, help='integer, specify production AOI id in ghana_tiles.geojson')
-@click.option('--s3_bucket', default='string, activemapper', help='s3 bucket name')
-@click.option('--threads_number', default= 4, help='integer, output folder prefix')
-@click.option('--be_minmax_analysis', default = False, help='bool, if extract min and max from worker labels')
-@click.option('--verbose', default= False , help='bool, output folder prefix')
+@click.option('--config_filename', type=str, default='segmenter_config.yaml', help='The name of the config to use.')
+@click.option('--tile_id', type=int, default=None, help='only used for debug mode, user-defined tile_id')
+@click.option('--csv_pth', type=str, default=None, help='csv path for providing a specified tile list')
+@click.option('--aoi', type=int, default=None, help='specify production AOI id in ghana_tiles.geojson')
+@click.option('--s3_bucket', type=str, default='activemapper', help='s3 bucket name')
+@click.option('--threads_number', type=int,default= 4, help='output folder prefix')
+@click.option('--be_minmax_analysis', is_flag=True, help='if extract min and max from worker labels')
+@click.option('--verbose', is_flag=True, help='if output folder prefix')
 def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_minmax_analysis, verbose):
     # some constants are defined here
     buf = 11 # buffer of composite image
@@ -841,15 +841,18 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
     logging.basicConfig(filename=log_path, filemode='w', level=logging.INFO)
     logger = logging.getLogger(__name__)
 
+    # print(be_minmax_analysis)
     if be_minmax_analysis is True:
         command = '/usr/bin/Rscript'
         path_script = "Preprocessing.R"
         args = ['1']
         if os.path.isfile(path_script) is False:
             logger.error("Fail to find Preprocessing.R")
+            sys.exit()
 
         # check_output will run the command and store to result
         cmd = [command, path_script] + args
+        print(cmd)
         try:
             x = subprocess.call(cmd, stdout=open(os.devnull, 'wb'))
         except:
@@ -875,6 +878,8 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
     if mmu <= 0 or maximum_field_size <= 0:
         logger.error("Min and max polygon size were not set correctly!")
         sys.exit()
+    else:
+        print("min_max analysis finished!")
 
     prob_threshold = params['prob_threshold']
     output_s3_prefix = params['output']
