@@ -2,9 +2,9 @@
 # The function 'segmentation_season' is the main function for segmentation steps
 # The whole algorithm needs two inputs: probability image (which you can obtain from any classifer) and original RS
 # images, and the output will be a vector map
-# The processing is consisted of 6 steps: 1) mean-shift smoothing; 2) watershed segmentation (needs
-# over-segment); 3) remain polygons that the average probability is over a threshold; 4) sieving filter + hierarchical
-# merging; 5) polygonization; 6) check validity of polygons and simplify boundary
+# The processing is consisted of 7 steps: 1) empirical analysis for polygon size bounds: 2) mean-shift smoothing;
+# 3) watershed segmentation (needs over-segment); 4) remain polygons that the average probability is over a threshold;
+# 5) sieving filter + hierarchical merging; 6) polygonization; 7) check validity of polygons and simplify boundary
 # author: Su Ye
 
 import boto3
@@ -776,11 +776,12 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
     """
 
     uri_composite_gdal_os = "/vsis3/{}/{}/{}/tile{}_{}_{}.tif".format(s3_bucket, planet_directory, 'OS', tile_id,
-                                                                       dry_lower_ordinal, dry_upper_ordinal)
+                                                                      dry_lower_ordinal, dry_upper_ordinal)
     uri_composite_gdal_gs = "/vsis3/{}/{}/{}/tile{}_{}_{}.tif".format(s3_bucket, planet_directory, 'GS', tile_id,
-                                                                       wet_lower_ordinal, wet_upper_ordinal)
-    uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}_8_run0_iteration4.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
-    #uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
+                                                                      wet_lower_ordinal, wet_upper_ordinal)
+    uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}_8_run0_iteration4.tif".format(s3_bucket, prob_directory, str(tile_col),
+                                                                              str(tile_row))
+    # uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
     # segmentation for off-season
     segmentation_season(tile_id, 'OS', uri_composite_gdal_os, uri_prob_gdal, working_dir, mmu, maximum_field_size,
                         prob_threshold, buf, logger, verbose)
@@ -796,29 +797,37 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
     out_path_dry = os.path.join(working_dir, 'tile{}_OS_seg.geojson'.format(tile_id))
     try:
         s3.upload_file(out_path_dry, s3_bucket, '{}/OS/tile{}_{}_{}_seg.geojson'.format(output_s3_prefix, tile_id,
-                                                                                 dry_lower_ordinal, dry_upper_ordinal))
+                                                                                        dry_lower_ordinal,
+                                                                                        dry_upper_ordinal))
     except ClientError as e:
-        logger.error("S3 uploading fails for tile{}_{}_{}_seg.geojson: {}".format(tile_id, dry_lower_ordinal, dry_upper_ordinal, e))
-        raise
+        logger.error("S3 uploading fails for tile{}_{}_{}_seg.geojson: {}".format(tile_id, dry_lower_ordinal,
+                                                                                  dry_upper_ordinal, e))
+        return False
 
     out_path_wet = os.path.join(working_dir, 'tile{}_GS_seg.geojson'.format(tile_id))
 
     try:
-        s3.upload_file(out_path_wet, s3_bucket, '{}/GS/tile{}_{}_{}_seg.geojson'.format(output_s3_prefix,  tile_id, wet_lower_ordinal,
-                                                                                wet_upper_ordinal))
+        s3.upload_file(out_path_wet, s3_bucket, '{}/GS/tile{}_{}_{}_seg.geojson'.format(output_s3_prefix,  tile_id,
+                                                                                        wet_lower_ordinal,
+                                                                                        wet_upper_ordinal))
     except ClientError as e:
-        logger.error("S3 uploading fails for tile{}_{}_{}_seg.geojson: {}".format(tile_id, wet_lower_ordinal, wet_upper_ordinal, e))
-        raise
+        logger.error("S3 uploading fails for tile{}_{}_{}_seg.geojson: {}".format(tile_id, wet_lower_ordinal,
+                                                                                  wet_upper_ordinal, e))
+        return False
 
     if os.path.exists(out_path_dry):
         os.remove(out_path_dry)
     else:
         logger.error("Segmentation fails: couldn't find {}").format(out_path_dry)
+        return False
 
     if os.path.exists(out_path_wet):
         os.remove(out_path_wet)
     else:
         logger.error("Segmentation fails: couldn't find {}").format(out_path_wet)
+        return False
+
+    return True
 
 @click.command()
 @click.option('--config_filename', type=str, default='segmenter_config.yaml', help='The name of the config to use.')
@@ -826,7 +835,7 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
 @click.option('--csv_pth', type=str, default=None, help='csv path for providing a specified tile list')
 @click.option('--aoi', type=int, default=None, help='specify production AOI id in ghana_tiles.geojson')
 @click.option('--s3_bucket', type=str, default='activemapper', help='s3 bucket name')
-@click.option('--threads_number', type=int,default= 4, help='output folder prefix')
+@click.option('--threads_number', type=int, default= 4, help='output folder prefix')
 @click.option('--be_minmax_analysis', is_flag=True, help='if extract min and max from worker labels')
 @click.option('--verbose', is_flag=True, help='if output folder prefix')
 def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_minmax_analysis, verbose):
@@ -962,11 +971,14 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
                                                       logger)
 
             # implement segmentation for both seasons
-            segmentation_composition_executor.submit(segmentation_execution_doubleseasons, s3_bucket, planet_directory,
-                                                     prob_directory, tile_id, dry_lower_ordinal, dry_upper_ordinal,
-                                                     wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
-                                                     working_dir, mmu, maximum_field_size, prob_threshold, buf,
-                                                     output_s3_prefix, logger, verbose)
+            if segmentation_composition_executor.submit(segmentation_execution_doubleseasons, s3_bucket, planet_directory,
+                                                        prob_directory, tile_id, dry_lower_ordinal, dry_upper_ordinal,
+                                                        wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
+                                                        working_dir, mmu, maximum_field_size, prob_threshold, buf,
+                                                        output_s3_prefix, logger, verbose) is True:
+                success_count = success_count + 1
+            else:
+                failure_count = failure_count + 1
 
         # await all tile finished
         segmentation_composition_executor.drain()
@@ -976,7 +988,8 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
 
         logger.info("Progress: finished segmentation task for aoi {}; the total tile number to be processed is {}; "
                     "the success_count is {}; the failure_count is {} ({})"
-                    .format(aoi, len(alltiles), success_count, failure_count, datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')))
+                    .format(aoi, len(alltiles), success_count, failure_count, datetime.now(tz).strftime('%Y-%m-%d '
+                                                                                                        '%H:%M:%S')))
     # single tile processing
     else:
         # define log path
@@ -986,8 +999,8 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
 
         # time zone
         tz = timezone('US/Eastern')
-        logger.info("Progress: starting a segmentation task ({})".format(datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')))
-
+        logger.info("Progress: starting a segmentation task ({})".format(datetime.now(tz).strftime('%Y-%m-%d '
+                                                                                                   '%H:%M:%S')))
 
         # read a geopandas object for tile geojson
         uri_tile = "s3://{}/{}/{}".format(s3_bucket, prefix, tiles_geojson_path)
