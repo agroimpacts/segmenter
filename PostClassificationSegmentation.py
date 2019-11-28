@@ -779,9 +779,9 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
                                                                       dry_lower_ordinal, dry_upper_ordinal)
     uri_composite_gdal_gs = "/vsis3/{}/{}/{}/tile{}_{}_{}.tif".format(s3_bucket, planet_directory, 'GS', tile_id,
                                                                       wet_lower_ordinal, wet_upper_ordinal)
-    uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}_8_run0_iteration4.tif".format(s3_bucket, prob_directory, str(tile_col),
-                                                                              str(tile_row))
-    # uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
+    #uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}_8_run0_iteration4.tif".format(s3_bucket, prob_directory, str(tile_col),
+    #                                                                          str(tile_row))
+    uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
     # segmentation for off-season
     segmentation_season(tile_id, 'OS', uri_composite_gdal_os, uri_prob_gdal, working_dir, mmu, maximum_field_size,
                         prob_threshold, buf, logger, verbose)
@@ -880,7 +880,7 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
 
     prefix = params['planet_prefix']
     planet_directory = params['planet_directory']
-    prob_directory = params['prob_directory']
+    prob_directory = params['prob_directory'] + '/{}_whole'.format(aoi) 
     tiles_geojson_path = params['tile_geojson_path']
     mmu = params['mmu']
     maximum_field_size = params['max_field_size']
@@ -967,8 +967,7 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
 
             # calculate global column and row for this tile based on center coordinates of tiles
             foc_gpd_tile = gpd_tile[gpd_tile['tile'] == int(tile_id)]
-            (tile_col, tile_row) = get_colrow_geojson(foc_gpd_tile, left_corner_x, left_corner_y, per_tile_width,
-                                                      logger)
+            (tile_col, tile_row) = get_colrow_geojson(foc_gpd_tile, left_corner_x, left_corner_y, per_tile_width)
 
             # implement segmentation for both seasons
             if segmentation_composition_executor.submit(segmentation_execution_doubleseasons, s3_bucket, planet_directory,
