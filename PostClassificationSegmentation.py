@@ -727,7 +727,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     infile = dst_layername + ".geojson"
     outfile = os.path.join(working_dir, 'tile{}_{}_seg.geojson'.format(tile_id, season))
     command = '/usr/bin/Rscript'
-    path_script = "Postprocessing.R"
+    path_script = "../Postprocessing.R"
     args = [infile, outfile, '0.00005']
     if os.path.isfile(path_script) is False:
         logger.error("Fail to find Postprocessing.R")
