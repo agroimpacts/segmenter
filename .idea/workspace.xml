@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6302195b-3eae-4f12-a882-049ad2aeb3ce" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/PostClassificationSegmentation.py" beforeDir="false" afterPath="$PROJECT_DIR$/PostClassificationSegmentation.py" afterDir="false" />
-    </list>
+    <list default="true" id="6302195b-3eae-4f12-a882-049ad2aeb3ce" name="Default Changelist" comment="" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -15,8 +13,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/PostClassificationSegmentation.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="449">
-              <caret line="543" column="71" lean-forward="true" selection-start-line="543" selection-start-column="71" selection-end-line="543" selection-end-column="71" />
+            <state relative-caret-position="77">
+              <caret line="807" lean-forward="true" selection-start-line="807" selection-end-line="807" />
               <folding>
                 <element signature="e#710#722#0" expanded="true" />
               </folding>
@@ -36,7 +34,7 @@
       </list>
     </option>
   </component>
-  <component name="ProjectFrameBounds">
+  <component name="ProjectFrameBounds" extendedState="6">
     <option name="y" value="23" />
     <option name="width" value="960" />
     <option name="height" value="1111" />
@@ -89,7 +87,7 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="0" y="23" width="960" height="1111" extended-state="0" />
+    <frame x="0" y="23" width="1920" height="1111" extended-state="6" />
     <editor active="true" />
     <layout>
       <window_info id="Favorites" side_tool="true" />
@@ -114,8 +112,8 @@
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/PostClassificationSegmentation.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="449">
-          <caret line="543" column="71" lean-forward="true" selection-start-line="543" selection-start-column="71" selection-end-line="543" selection-end-column="71" />
+        <state relative-caret-position="77">
+          <caret line="807" lean-forward="true" selection-start-line="807" selection-end-line="807" />
           <folding>
             <element signature="e#710#722#0" expanded="true" />
           </folding>

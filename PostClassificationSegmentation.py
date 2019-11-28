@@ -854,7 +854,7 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
     if be_minmax_analysis is True:
         command = '/usr/bin/Rscript'
         path_script = "Preprocessing.R"
-        args = ['1']
+        args = [str(aoi)]
         if os.path.isfile(path_script) is False:
             logger.error("Fail to find Preprocessing.R")
             sys.exit()
