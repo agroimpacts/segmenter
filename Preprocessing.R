@@ -33,19 +33,23 @@ preprocessing <- function(
   aoi_id
 )
 {
-  tile.aoi <- '/home/ubuntu/source/ghana_tiles_merged.geojson'
-  yaml.dir <- '/home/ubuntu/source/segmenter_config.yaml'
-  
+  # tile.aoi <- '/home/ubuntu/source/ghana_tiles_merged.geojson'
+  # yaml.dir <- '/home/ubuntu/source/segmenter_config.yaml'
+  # The below is for local run
+  # workingfolder <- '/Users/coloury/Dropbox/MappingAfrica/segmentation/source/'
+  workingfolder <- '/home/ubuntu/source/'
+  tile.aoi <- paste0(workingfolder, 'ghana_tiles_merged.geojson')
+  yaml.dir <- paste0(workingfolder, 'segmenter_config.yaml')
   # decide cluster id
   if(aoi_id < 7){
     cluster_id <- 1
-  }else if (aoi_id == 7 || aoi_id == 8 || aoi_id == 10 || aoi_id == 11){
-    cluster_id <- 3
-  }else{
+  }else if (aoi_id == 7 || aoi_id == 8 || aoi_id == 9|| aoi_id == 12 || aoi_id == 15){
     cluster_id <- 2
+  }else{
+    cluster_id <- 3
   }
     
-  static.cluster.dir <- paste0('/home/ubuntu/source/incoming_names_static_cluster', cluster_id,'.csv')
+  static.cluster.dir <- paste0(workingfolder, 'incoming_names_static_cluster', cluster_id,'.csv')
   qsite <- TRUE
   params <- read_yaml(yaml.dir)
   
