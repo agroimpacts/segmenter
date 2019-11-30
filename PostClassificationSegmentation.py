@@ -599,7 +599,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
 
     # For a 2D image, a connectivity of 1 corresponds to immediate neighbors up, down, left, and right,
     # while a connectivity of 2 also includes diagonal neighbors.
-    segments_watershed = watershed(gradient_subset, markers=3600, connectivity=1, compactness=0).astype(np.int16)
+    segments_watershed = watershed(gradient_subset, markers=2500, connectivity=1, compactness=0).astype(np.int16)
 
     # read metadata info
     metadata = gdal.Open(uri_prob_gdal)
