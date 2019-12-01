@@ -1,5 +1,5 @@
 segmentation_exe=/home/ubuntu/segmenter/PostClassificationSegmentation.py
-threads_num=4
+threads_num=8
 echo "Enter aoi"
 read aoi_id
 
