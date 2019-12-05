@@ -36,8 +36,8 @@ preprocessing <- function(
   # tile.aoi <- '/home/ubuntu/source/ghana_tiles_merged.geojson'
   # yaml.dir <- '/home/ubuntu/source/segmenter_config.yaml'
   # The below is for local run
-  # workingfolder <- '/Users/coloury/Dropbox/MappingAfrica/segmentation/source/'
-  workingfolder <- '/home/ubuntu/source/'
+  workingfolder <- '/home/su/Dropbox/MappingAfrica/segmentation/source/'
+  # workingfolder <- '/home/ubuntu/source/'
   tile.aoi <- paste0(workingfolder, 'ghana_tiles_merged.geojson')
   yaml.dir <- paste0(workingfolder, 'segmenter_config.yaml')
   # decide cluster id
