@@ -11,14 +11,16 @@ The steps to running a segmentation procedure are as follows:
     ```bash
     ssh ubuntu@...
     ```
-    You need to change the yaml file first, Open the google sheet, and this is a doc for statisitics for each aoi Su summarized already by running preprocessing.R:
+    You need to change the yaml file first. Open the google sheet:
     [Production_Process_2019 - Google Sheets](https://docs.google.com/spreadsheets/d/1QWfPwVDH4aqSLCIJr56WjXfuRpig5UtMfIBao9C77YM/edit#gid=0 )
+    
+    This is a doc for polygon statisitics Su summarized by running preprocessing.R locally. 
     Go to the directory 'source' on the instance
     ```bash
     cd source
     vi segmenter_config.yaml
     ```
-    copy the values in ‘min_poly_pixels’ in the Google sheet for your targeted aoi into the line ‘mmu’ in the yaml, and ‘max_poly_pixels’ to the line ‘max_field_size’ in the yaml
+    Copy the values in ‘min_poly_pixels’ in the Google sheet for your targeted aoi into the line ‘mmu’ in the yaml, and ‘max_poly_pixels’ to the line ‘max_field_size’ in the yaml
     
     Note: For aoi 10, 11, 13, 14, 16, you need to additionally change the line ‘dry_lower_ordinal’ into ‘736999’ in the yaml
 4. Run segmentation using screen 
