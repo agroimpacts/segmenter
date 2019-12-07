@@ -263,10 +263,14 @@ def rag_mean_variance_color(image, labels, _include_texture, connectivity=2, mod
         graph.nodes[current]['total color square'] += image[index] * image[index]
 
     for n in graph:
-        graph.nodes[n]['mean color'] = (graph.nodes[n]['total color'] /
-                                        graph.nodes[n]['pixel count'])
-        graph.nodes[n]['variance color'] = (graph.nodes[n]['total color square'] / graph.nodes[n]['pixel count']) - \
-                                           (graph.nodes[n]['mean color'] * graph.nodes[n]['mean color'])
+        if graph.nodes[n]['pixel count'] is not 0:
+            graph.nodes[n]['mean color'] = (graph.nodes[n]['total color'] /
+                                            graph.nodes[n]['pixel count'])
+            graph.nodes[n]['variance color'] = (graph.nodes[n]['total color square'] / graph.nodes[n]['pixel count']) - \
+                                                (graph.nodes[n]['mean color'] * graph.nodes[n]['mean color'])
+        else:
+            graph.nodes[n]['mean color'] = 0
+            graph.nodes[n]['variance color'] = 0
 
     for x, y, d in graph.edges(data=True):
         if _include_texture is True:
@@ -635,7 +639,7 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
 
 
     # STEP 4
-    # connected small polygons using sieving filter + hierachical merging
+    # connected small polygons using sieving filteir + hierachical merging
 
     # first apply sieving filter, as sieving substantially reduce the node number in graph, thereby improve efficiency
     cmd = 'gdal_sieve.py -q -st {} -8 {} {}'.format(int(mmu), os.path.join(working_dir, 'tile{}_{}_watershed_overlap.tif'
@@ -646,52 +650,60 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     # reopen sieved image
     segments_watershed_sieve = gdal_array.LoadFile(os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve.tif'
                                                                 .format(tile_id, season)))
-
-    # then hierachical merging
-    # min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
-    # array_original_stack = np.dstack((b1, b2, b3, b4))
-    array_original_subset = np.dstack((b1, b2, b3, b4))[buf:cols - buf, buf:rows - buf]
-
-    # calculate adaptive threshold based stand deviation for 'field' pixels
-    std_band = np.std(array_original_subset[segments_watershed_sieve > 0], axis=0)
-    vec_std = np.linalg.norm(std_band)
-
-    # assign -9999 so background pixels won't be merged
-    array_original_subset[segments_watershed_sieve == 0] = [-9999, -9999, -9999, -9999]
-
-    g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=1,
-                                mode='distance', _include_texture=include_texture)
-
-    segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std/3,
-                                                             rag_copy=False,
-                                                             in_place_merge=False,
-                                                             _maximum_fieldsize=maximum_field_size,
-                                                             _shape_threshold=shape_threshold,
-                                                             _include_texture=include_texture,
-                                                             merge_func=merge_mean_color,
-                                                             weight_func=weight_mean_color,
-                                                             weight_func_texture=weight_mean_color_texture)
-
-    # note: after merging, it sometimes reset polygons id, which cause the id of no field to be not zero any more,
-    # the below is the function to fix this issue
-    for i in range(np.max(segments_watershed_merge)):
-        condition = np.equal(segments_watershed_merge, i)
-        id_condition = np.extract(condition, segments_watershed)
-        counts = np.bincount(id_condition)
-        if np.argmax(counts) == 0:
-            nofield_id = i
-            break
-
-    if nofield_id is not 0:
-        # for nofield id is not 0, switch 0 and nofield id
-        segments_watershed_merge[segments_watershed_merge == 0] = 9999
-        segments_watershed_merge[segments_watershed_merge == nofield_id] = 0
-        segments_watershed_merge[segments_watershed_merge == 9999] = nofield_id
     
-    # required to save the merged polygon cuz polygonization needs
-    out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
-    gdal_save_file_tif_1bands(out_path, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
-                              cols - 2 * buf)
+    # for the condition that no field is detected in the scene
+    unique_id = np.unique(segments_watershed_sieve)
+    if((len(unique_id) is 1) & (unique_id[0] == 0)):
+        segments_watershed_merge = np.zeros((rows - 2 * buf, cols - 2 * buf), dtype = int)
+        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
+        gdal_save_file_tif_1bands(out_path, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
+                                  cols - 2 * buf)
+    else:
+        # then hierachical merging
+        # min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
+        # array_original_stack = np.dstack((b1, b2, b3, b4))
+        array_original_subset = np.dstack((b1, b2, b3, b4))[buf:cols - buf, buf:rows - buf]
+
+        # calculate adaptive threshold based stand deviation for 'field' pixels
+        std_band = np.std(array_original_subset[segments_watershed_sieve > 0], axis=0)
+        vec_std = np.linalg.norm(std_band)
+
+        # assign -9999 so background pixels won't be merged
+        array_original_subset[segments_watershed_sieve == 0] = [-9999, -9999, -9999, -9999]
+
+        g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=1,
+                                    mode='distance', _include_texture=include_texture)
+
+        segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std/3,
+                                                                rag_copy=False,
+                                                                in_place_merge=False,
+                                                                _maximum_fieldsize=maximum_field_size,
+                                                                _shape_threshold=shape_threshold,
+                                                                _include_texture=include_texture,
+                                                                merge_func=merge_mean_color,
+                                                                weight_func=weight_mean_color,
+                                                                weight_func_texture=weight_mean_color_texture)
+
+        # note: after merging, it sometimes reset polygons id, which cause the id of no field to be not zero any more,
+        # the below is the function to fix this issue
+        for i in range(np.max(segments_watershed_merge)):
+            condition = np.equal(segments_watershed_merge, i)
+            id_condition = np.extract(condition, segments_watershed)
+            counts = np.bincount(id_condition)
+            if np.argmax(counts) == 0:
+                nofield_id = i
+                break
+
+        if nofield_id is not 0:
+            # for nofield id is not 0, switch 0 and nofield id
+            segments_watershed_merge[segments_watershed_merge == 0] = 9999
+            segments_watershed_merge[segments_watershed_merge == nofield_id] = 0
+            segments_watershed_merge[segments_watershed_merge == 9999] = nofield_id
+    
+        # required to save the merged polygon cuz polygonization needs
+        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
+        gdal_save_file_tif_1bands(out_path, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
+                                cols - 2 * buf)
 
     # STEP 5
     # polyganize
