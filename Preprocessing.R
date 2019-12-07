@@ -182,9 +182,10 @@ preprocessing <- function(
                              "' and status = 'Approved'", 
                              " order by assignment_id")  
     assignmentid <- (DBI::dbGetQuery(con, assignment.sql))$assignment_id
-    
     assignmentid <- unlist(assignmentid)
-    
+    assignmentid <- assignmentid[!is.na(assignmentid)]
+    # print(label.dynamic[ii])
+
     # query polygons for each assignment
     bayes.polys <- lapply(1:length(assignmentid), function(x) {
       
