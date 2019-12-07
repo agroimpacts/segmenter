@@ -34,10 +34,10 @@ The steps to running a segmentation procedure are as follows:
     ```
     Input the aoi name, and then 'ctrl + A + D' to return to main screen. You can feel free to log out the instance 
 5. After the production is finished
-    Once it finished, the instance would send a notisficiation email to your email address. Please check your junk folder also, and the notisification email is likely to be misidentified as junk email by your email app.
+    Once it finished, the instance would send a notisfication email to your email address. Please check your junk folde, and the notisification email is likely to be flagged as junk email by your email app.
     You need to cancel spot-based instance after it is finished
     
-6. For statistic analysis of polygons (preprocesing), go your local folder of git repo segmentation, and first change the line 39: workingfolder <- 'YOUR_YAML_FOLDER'
+6. For statistic analysis of polygons (preprocesing), go to your local folder of git repo segmentation, and first change the line 39: workingfolder <- 'YOUR_YAML_FOLDER'
 Then run:
     ```bash
     Rscript Preprocessing.R YOUR_FOCUSED_AOI_ID
