@@ -1,4 +1,4 @@
-AMID="ami-04a092ac76bfacaa5"
+AMID="ami-069801c7083bd7553"
 ITYPE="t2.xlarge"
 KEYNAME="mapper_key_pair"
 SECURITY="airg-security"
