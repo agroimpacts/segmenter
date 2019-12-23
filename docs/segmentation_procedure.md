@@ -2,27 +2,35 @@
 ### Author: Su Ye
 These notes describe the steps for running segmentation for productions
 The steps to running a segmentation procedure are as follows:
+
 1. First, Download script launch_ami_production.sh in github repo ‘segmenter/tool’
+
 2. Modified INAME (line 5) in  launch_ami_production.sh, and change it to, e.g. segmenter_x, x is the number of current instance, and run this script locally to launch a spot-based instance: 
+
     ```bash
     ./launch_ami_productuion.sh
     ```
+
 3. Log into the segmentation instance you just launch 
+    
     ```bash
     ssh ubuntu@...
     ```
-    You need to change the yaml file first. Open the google sheet:
-    [Production_Process_2019 - Google Sheets](https://docs.google.com/spreadsheets/d/1QWfPwVDH4aqSLCIJr56WjXfuRpig5UtMfIBao9C77YM/edit#gid=0 )
-    
-    This is a doc for polygon statisitics Su summarized by running preprocessing.R locally. 
+
+    You need to change the yaml file first. Open the google sheet: [Production_Process_2019 - Google Sheets](https://docs.google.com/spreadsheets/d/1QWfPwVDH4aqSLCIJr56WjXfuRpig5UtMfIBao9C77YM/edit#gid=0 ). This is a doc for polygon statisitics Su summarized by running preprocessing.R locally. 
+
     Go to the directory 'source' on the instance
+    
     ```bash
     cd source
     vi segmenter_config.yaml
     ```
+    
+
     Copy the values in ‘min_poly_pixels’ in the Google sheet for your targeted aoi into the line ‘mmu’ in the yaml, and ‘max_poly_pixels’ to the line ‘max_field_size’ in the yaml
     
     Note: For aoi 10, 11, 13, 14, 16, you need to additionally change the line ‘dry_lower_ordinal’ into ‘736999’ in the yaml
+    
 4. Run segmentation using screen 
     ```bash
     Screen
@@ -38,8 +46,11 @@ The steps to running a segmentation procedure are as follows:
     You need to cancel spot-based instance after it is finished
     
 6. For statistic analysis of polygons (preprocesing), go to your local folder of git repo segmentation, and first change the line 39: workingfolder <- 'YOUR_YAML_FOLDER'
-Then run:
+
+    Then run:
+    
     ```bash
     Rscript Preprocessing.R YOUR_FOCUSED_AOI_ID
     ```
-The result would be saved to the yaml in the workingfolder your just changed.
+    
+    The result would be saved to the yaml in the workingfolder your just changed.
