@@ -8,7 +8,7 @@ The steps to running a segmentation procedure are as follows:
 2. Modified INAME (line 5) in  launch_ami_production.sh, and change it to, e.g. segmenter_x, x is the number of current instance, and run this script locally to launch a spot-based instance: 
 
     ```bash
-    ./launch_ami_productuion.sh
+    ./tool/launch_ami_production.sh
     ```
 
 3. Log into the segmentation instance you just launch 
