@@ -651,13 +651,14 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     segments_watershed_sieve = gdal_array.LoadFile(os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve.tif'
                                                                 .format(tile_id, season)))
     
-    # for the condition that no field is detected in the scene
-    unique_id = np.unique(segments_watershed_sieve)
-    if((len(unique_id) is 1) & (unique_id[0] == 0)):
-        segments_watershed_merge = np.zeros((rows - 2 * buf, cols - 2 * buf), dtype = int)
-        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
-        gdal_save_file_tif_1bands(out_path, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
-                                  cols - 2 * buf)
+    if ((len(unique_id) is 1) & (unique_id[0] == 0)): # for no field tile
+        # remove temporal file
+        if verbose is False:
+            out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap.tif'.format(tile_id, season))
+            os.remove(out_path)
+            out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve.tif'.format(tile_id, season))
+            os.remove(out_path)
+        logger.warning("No field is detected for {} at {} season".format(tile_id, season))
     else:
         # then hierachical merging
         # min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
@@ -674,15 +675,15 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
         g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=1,
                                     mode='distance', _include_texture=include_texture)
 
-        segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std/3,
-                                                                rag_copy=False,
-                                                                in_place_merge=False,
-                                                                _maximum_fieldsize=maximum_field_size,
-                                                                _shape_threshold=shape_threshold,
-                                                                _include_texture=include_texture,
-                                                                merge_func=merge_mean_color,
-                                                                weight_func=weight_mean_color,
-                                                                weight_func_texture=weight_mean_color_texture)
+        segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std / 3,
+                                                                 rag_copy=False,
+                                                                 in_place_merge=False,
+                                                                 _maximum_fieldsize=maximum_field_size,
+                                                                 _shape_threshold=shape_threshold,
+                                                                 _include_texture=include_texture,
+                                                                 merge_func=merge_mean_color,
+                                                                 weight_func=weight_mean_color,
+                                                                 weight_func_texture=weight_mean_color_texture)
 
         # note: after merging, it sometimes reset polygons id, which cause the id of no field to be not zero any more,
         # the below is the function to fix this issue
@@ -699,65 +700,64 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
             segments_watershed_merge[segments_watershed_merge == 0] = 9999
             segments_watershed_merge[segments_watershed_merge == nofield_id] = 0
             segments_watershed_merge[segments_watershed_merge == 9999] = nofield_id
-    
+
         # required to save the merged polygon cuz polygonization needs
         out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
         gdal_save_file_tif_1bands(out_path, segments_watershed_merge, gdal.GDT_Int16, trans, proj, rows - 2 * buf,
-                                cols - 2 * buf)
+                                  cols - 2 * buf)
 
-    # STEP 5
-    # polyganize
+        # check if it is valid image before polygonization
+        if not is_valid_image(out_path):
+            logger.error("Segmentation failed for {} at {} season".format(tile_id, season))
 
-    # check if it is valid image before polygonization
-    if not is_valid_image(out_path):
-        logger.error("Segmentation failed for {} at {} season".format(tile_id, season))
+        # STEP 5
+        # polyganize
+        src_ds = gdal.Open(out_path)
 
-    src_ds = gdal.Open(out_path)
+        srcband = src_ds.GetRasterBand(1)
 
-    srcband = src_ds.GetRasterBand(1)
+        srs = osr.SpatialReference()
+        srs.ImportFromWkt(proj)
+        dst_layername = os.path.join(working_dir, 'tile{}_{}_watershed_sieve_merge_overlap'.format(tile_id, season))
+        drv = ogr.GetDriverByName("GeoJSON")
+        dst_ds = drv.CreateDataSource(dst_layername + ".geojson")
+        dst_layer = dst_ds.CreateLayer(dst_layername, srs=srs)
 
-    srs = osr.SpatialReference()
-    srs.ImportFromWkt(proj)
-    dst_layername = os.path.join(working_dir, 'tile{}_{}_watershed_sieve_merge_overlap'.format(tile_id, season))
-    drv = ogr.GetDriverByName("GeoJSON")
-    dst_ds = drv.CreateDataSource(dst_layername + ".geojson")
-    dst_layer = dst_ds.CreateLayer(dst_layername, srs=srs)
+        fieldName = "id"
+        fd = ogr.FieldDefn(fieldName, ogr.OFTInteger)
+        dst_layer.CreateField(fd)
+        dst_field = dst_layer.GetLayerDefn().GetFieldIndex("id")
 
-    fieldName = "id"
-    fd = ogr.FieldDefn(fieldName, ogr.OFTInteger)
-    dst_layer.CreateField(fd)
-    dst_field = dst_layer.GetLayerDefn().GetFieldIndex("id")
+        gdal.Polygonize(srcband, None, dst_layer, dst_field, [], callback=None)
 
-    gdal.Polygonize(srcband, None, dst_layer, dst_field, [], callback=None)
-    
-    # release memory
-    dst_ds = None  # it guaranttee shapefile is successfully created
-    src_ds = None
+        # release memory
+        dst_ds = None  # it guaranttee shapefile is successfully created
+        src_ds = None
 
-    # STEP 6
-    # post-processing
-    infile = dst_layername + ".geojson"
-    outfile = os.path.join(working_dir, 'tile{}_{}_seg.geojson'.format(tile_id, season))
-    command = '/usr/bin/Rscript'
-    path_script = "../Postprocessing.R"
-    args = [infile, outfile, '0.00005']
-    if os.path.isfile(path_script) is False:
-        logger.error("Fail to find Postprocessing.R")
+        # STEP 6
+        # post-processing
+        infile = dst_layername + ".geojson"
+        outfile = os.path.join(working_dir, 'tile{}_{}_seg.geojson'.format(tile_id, season))
+        command = '/usr/bin/Rscript'
+        path_script = "../Postprocessing.R"
+        args = [infile, outfile, '0.00005']
+        if os.path.isfile(path_script) is False:
+            logger.error("Fail to find Postprocessing.R")
 
-    # check_output will run the command and store to result
-    cmd = [command, path_script] + args
-    x = subprocess.call(cmd, stdout=open(os.devnull, 'wb'))
+        # check_output will run the command and store to result
+        cmd = [command, path_script] + args
+        x = subprocess.call(cmd, stdout=open(os.devnull, 'wb'))
 
-    # remove temporal file
-    if verbose is False:
-        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap.tif'.format(tile_id, season))
-        os.remove(out_path)
-        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve.tif'.format(tile_id, season))
-        os.remove(out_path)
-        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
-        os.remove(out_path)
-        out_path = os.path.join(working_dir, 'tile{}_{}_watershed_sieve_merge_overlap.geojson'.format(tile_id, season))
-        os.remove(out_path)
+        # remove temporal file
+        if verbose is False:
+            out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap.tif'.format(tile_id, season))
+            os.remove(out_path)
+            out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve.tif'.format(tile_id, season))
+            os.remove(out_path)
+            out_path = os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve_merge.tif'.format(tile_id, season))
+            os.remove(out_path)
+            out_path = os.path.join(working_dir, 'tile{}_{}_watershed_sieve_merge_overlap.geojson'.format(tile_id, season))
+            os.remove(out_path)
 
 
 def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_directory, tile_id, dry_lower_ordinal,
@@ -795,12 +795,20 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
     #                                                                          str(tile_row))
     uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
     # segmentation for off-season
-    segmentation_season(tile_id, 'OS', uri_composite_gdal_os, uri_prob_gdal, working_dir, mmu, maximum_field_size,
-                        prob_threshold, buf, logger, verbose)
+    try:
+        segmentation_season(tile_id, 'OS', uri_composite_gdal_os, uri_prob_gdal, working_dir, mmu, maximum_field_size,
+                            prob_threshold, buf, logger, verbose)
+    except (OSError, ClientError, subprocess.CalledProcessError) as e:
+        logger.error("Segmentation failed for tile_id {} at OS season: {})"
+                     .format(tile_id, e))
 
     # segmentation for growing-season
-    segmentation_season(tile_id, 'GS', uri_composite_gdal_gs, uri_prob_gdal, working_dir, mmu, maximum_field_size,
-                        prob_threshold, buf, logger, verbose)
+    try:
+        segmentation_season(tile_id, 'GS', uri_composite_gdal_gs, uri_prob_gdal, working_dir, mmu, maximum_field_size,
+                            prob_threshold, buf, logger, verbose)
+    except (OSError, ClientError, subprocess.CalledProcessError) as e:
+        logger.error("Segmentation failed for tile_id {} at GS season: {})"
+                     .format(tile_id, e))
 
     ############################################################
     #             upload compositing image to s3             #
@@ -969,8 +977,6 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
             alltiles = gpd_tile.loc[gpd_tile['production_aoi'] == float(aoi)]['tile']
             # alltiles = gpd_tile.loc[gpd_tile['aoi'] == float(aoi)]['tile']
 
-        failure_count = 0
-        success_count = 0
         # looping over each tile
         for i in range(len(alltiles)):
 
@@ -982,14 +988,14 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
             (tile_col, tile_row) = get_colrow_geojson(foc_gpd_tile, left_corner_x, left_corner_y, per_tile_width)
 
             # implement segmentation for both seasons
-            if segmentation_composition_executor.submit(segmentation_execution_doubleseasons, s3_bucket, planet_directory,
-                                                        prob_directory, tile_id, dry_lower_ordinal, dry_upper_ordinal,
-                                                        wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
-                                                        working_dir, mmu, maximum_field_size, prob_threshold, buf,
-                                                        output_s3_prefix, logger, verbose) is True:
-                success_count = success_count + 1
-            else:
-                failure_count = failure_count + 1
+            segmentation_composition_executor.submit(segmentation_execution_doubleseasons, s3_bucket, planet_directory,
+                                                     prob_directory, tile_id, dry_lower_ordinal, dry_upper_ordinal,
+                                                     wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
+                                                     working_dir, mmu, maximum_field_size, prob_threshold, buf,
+                                                     output_s3_prefix, logger, verbose)
+            logger.info("Progress: has finished segmentation task for {} tiles out of the {} total tiles "
+                        .format(i, len(alltiles)))
+
 
         # await all tile finished
         segmentation_composition_executor.drain()
@@ -997,10 +1003,8 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
         # await threadpool to stop
         segmentation_composition_executor.close()
 
-        logger.info("Progress: finished segmentation task for aoi {}; the total tile number to be processed is {}; "
-                    "the success_count is {}; the failure_count is {} ({})"
-                    .format(aoi, len(alltiles), success_count, failure_count, datetime.now(tz).strftime('%Y-%m-%d '
-                                                                                                        '%H:%M:%S')))
+        logger.info("Final report: finished segmentation task for aoi {} ({})"
+                    .format(aoi, datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')))
     # single tile processing
     else:
         # define log path

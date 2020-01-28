@@ -4,6 +4,7 @@ suppressMessages(library(sp))
 suppressMessages(library(data.table))
 suppressMessages(library(dplyr))
 suppressMessages(library(lwgeom))
+suppressMessages(library(rmapshaper))
 # gdal_polygonizeR <- function(x, 
 #                              outshape   = NULL, 
 #                              gdalformat = 'ESRI Shapefile',
@@ -57,14 +58,11 @@ postprocessing <- function(in.path,
 {
   polygon_sf <- suppressWarnings(st_read(in.path, quiet = TRUE))
   # douglas puecker algorithm
-  polygon_sp_simplify <- suppressMessages(gSimplify(as(polygon_sf,"Spatial"), tol = dk.thresh, 
-                                   topologyPreserve = TRUE))
-  polygon_sf$geometry <- suppressMessages(st_as_sf(polygon_sp_simplify)) 
-  polygon_sf_simplify <- suppressMessages(st_sf(data.frame(polygon_sf$id, geom = st_as_sf(polygon_sp_simplify))) %>% st_make_valid %>% st_collection_extract("POLYGON"))
+  #polygon_sp_simplify <- suppressMessages(gSimplify(as(polygon_sf,"Spatial"), tol = dk.thresh,
+  #                                 topologyPreserve = TRUE))
+  polygon_sf_simplify <- rmapshaper::ms_simplify(input = as(polygon_sf[polygon_sf$id!=0, ], 'Spatial'), weighting=0.5) %>%st_as_sf() %>% st_make_valid %>% st_collection_extract("POLYGON")
   
-  polygon_sfc_valid <- suppressMessages(polygon_sf_simplify[polygon_sf_simplify$polygon_sf.id!=0,])
-  
-  suppressMessages(st_write(polygon_sfc_valid, out.path, delete_layer = TRUE))
+  suppressMessages(st_write(polygon_sf_simplify, out.path, update=TRUE))
 } 
 
 # labelmap <- raster(file.path(paste0("/home/su/Documents/Jupyter/Segmetation_ARS_results/"
