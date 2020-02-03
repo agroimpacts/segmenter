@@ -650,7 +650,8 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     # reopen sieved image
     segments_watershed_sieve = gdal_array.LoadFile(os.path.join(working_dir, 'tile{}_{}_watershed_overlap_sieve.tif'
                                                                 .format(tile_id, season)))
-    
+   
+    unique_id = np.unique(segments_watershed_sieve)
     if ((len(unique_id) is 1) & (unique_id[0] == 0)): # for no field tile
         # remove temporal file
         if verbose is False:
@@ -739,10 +740,10 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
         infile = dst_layername + ".geojson"
         outfile = os.path.join(working_dir, 'tile{}_{}_seg.geojson'.format(tile_id, season))
         command = '/usr/bin/Rscript'
-        path_script = "../Postprocessing.R"
+        path_script = "/home/ubuntu/segmenter/Postprocessing.R"
         args = [infile, outfile, '0.00005']
-        if os.path.isfile(path_script) is False:
-            logger.error("Fail to find Postprocessing.R")
+        # if os.path.isfile(path_script) is False:
+        # logger.error("Fail to find Postprocessing.R")
 
         # check_output will run the command and store to result
         cmd = [command, path_script] + args
@@ -1026,6 +1027,8 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
         # calculate global column and row for this tile based on center coordinates of tiles
         foc_gpd_tile = gpd_tile[gpd_tile['tile'] == int(tile_id)]
         (tile_col, tile_row) = get_colrow_geojson(foc_gpd_tile, left_corner_x, left_corner_y, per_tile_width)
+        print("tile_col is {}".format(tile_col))
+        print("tile_row is {}".format(tile_row))
 
         try:
             segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_directory, tile_id, dry_lower_ordinal,
