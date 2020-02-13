@@ -60,7 +60,7 @@ postprocessing <- function(in.path,
   # douglas puecker algorithm
   #polygon_sp_simplify <- suppressMessages(gSimplify(as(polygon_sf,"Spatial"), tol = dk.thresh,
   #                                 topologyPreserve = TRUE))
-  polygon_sf_simplify <- ms_simplify(input = polygon_sf[polygon_sf$id!=0, ], weighting=0.5) %>% st_as_sf() %>% st_make_valid()
+  polygon_sf_simplify <- ms_simplify(input = polygon_sf[polygon_sf$id!=0, ], weighting=0.7) %>% st_as_sf() %>% st_make_valid()
   polygon_sf_simplify <- suppressWarnings(st_collection_extract(polygon_sf_simplify, "POLYGON"))
   suppressMessages(st_write(polygon_sf_simplify, out.path, update=TRUE))
 } 

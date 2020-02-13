@@ -40,6 +40,7 @@ import math
 import heapq
 from skimage.measure import perimeter
 import sys
+from skimage.filters import gaussian
 
 
 def _revalidate_node_edges(rag, node, heap_list):
@@ -155,15 +156,6 @@ def merge_hierarchical_customized(labels, rag, thresh, rag_copy, in_place_merge,
             be_mergy = True
             if rag.nodes[n1]['pixel count'] + rag.nodes[n2]['pixel count'] > _maximum_fieldsize:
                 be_mergy = False
-            else:
-                if rag.nodes[n1]['pixel count'] is not 0 and rag.nodes[n2]['pixel count'] is not 0:
-                    shape_idx_1 = 0.25 * perimeter(np.isin(labels, rag.nodes(data=True)[n1]['labels']), neighbourhood=4) \
-                                  / np.sqrt(rag.nodes[n1]['pixel count'])
-                    if shape_idx_1 < _shape_threshold:
-                        shape_idx_2 = 0.25 * perimeter(np.isin(labels, rag.nodes(data=True)[n2]['labels']), neighbourhood=4) \
-                                      / np.sqrt(rag.nodes[n2]['pixel count'])
-                        if shape_idx_2 < _shape_threshold:
-                            be_mergy =False
 
             if be_mergy is True:
                 # Invalidate all neigbors of `src` before its deleted
@@ -192,14 +184,20 @@ def merge_hierarchical_customized(labels, rag, thresh, rag_copy, in_place_merge,
 
     label_map = np.arange(labels.max() + 1)
     for ix, (n, d) in enumerate(rag.nodes(data=True)):
+        # shape_idx = 0.25 * perimeter(np.isin(labels, d['labels']), neighbourhood=4) \
+        #               / np.sqrt(d['pixel count'])
+        # if shape_idx > 3:
+        #     for label in d['labels']:
+        #         label_map[label] = 0
+        # else:
         for label in d['labels']:
-            label_map[label] = ix
+                label_map[label] = ix
 
     return label_map[labels]
 
 
 def rag_mean_variance_color(image, labels, _include_texture, connectivity=2, mode='distance',
-                   sigma=255.0):
+                            sigma=255.0):
     """Compute the Region Adjacency Graph using mean colors.
     Given an image and its initial segmentation, this method constructs the
     corresponding Region Adjacency Graph (RAG). Each node in the RAG
@@ -254,20 +252,25 @@ def rag_mean_variance_color(image, labels, _include_texture, connectivity=2, mod
                                'total color': np.array([0, 0, 0, 0], dtype=np.double),
                                'total color square': np.array([0, 0, 0, 0], dtype=np.double),
                                'variance color': np.array([0, 0, 0, 0], dtype=np.double),
-                               'shape index': 0})
+                               'shape index': 0,
+                               'background': False})
 
     for index in np.ndindex(labels.shape):
         current = labels[index]
         graph.nodes[current]['pixel count'] += 1
         graph.nodes[current]['total color'] += image[index]
         graph.nodes[current]['total color square'] += image[index] * image[index]
+        # graph.nodes[current]['shape index'] = 0.25 * perimeter(np.isin(labels, graph.nodes(data=True)[current]['labels']), \
+        #                                                               neighbourhood=4) / np.sqrt(graph.nodes[current]['pixel count'])
+        # if graph.nodes[current]['shape index'] > 3:
+        #     graph.nodes[current]['background'] = True
 
     for n in graph:
         if graph.nodes[n]['pixel count'] is not 0:
             graph.nodes[n]['mean color'] = (graph.nodes[n]['total color'] /
                                             graph.nodes[n]['pixel count'])
             graph.nodes[n]['variance color'] = (graph.nodes[n]['total color square'] / graph.nodes[n]['pixel count']) - \
-                                                (graph.nodes[n]['mean color'] * graph.nodes[n]['mean color'])
+                                               (graph.nodes[n]['mean color'] * graph.nodes[n]['mean color'])
         else:
             graph.nodes[n]['mean color'] = 0
             graph.nodes[n]['variance color'] = 0
@@ -336,7 +339,7 @@ def weight_mean_color_texture(graph, src, dst, n):
     """
 
     diff = np.absolute(graph.nodes[dst]['mean color'] - graph.nodes[n]['mean color']) * 0.8 + \
-            np.sqrt(np.absolute(graph.nodes[dst]['variance color'] - graph.nodes[n]['variance color'])) * 0.2
+           np.sqrt(np.absolute(graph.nodes[dst]['variance color'] - graph.nodes[n]['variance color'])) * 0.2
     diff = np.linalg.norm(diff)
     return {'weight': diff}
 
@@ -527,7 +530,8 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     """
 
     proj = ''
-    shape_threshold = 1.15
+    prob_scale = 60 # scale for probability map to be added to original bands
+    shape_threshold = 2.7
     include_texture = False
 
     # a quick way to read image as numpy array
@@ -593,17 +597,33 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
 
     # STEP 2
     # sober filtering + watershed
-    r_sobel = sobel(b2_filter.reshape(cols, rows))
-    g_sobel = sobel(b3_filter.reshape(cols, rows))
-    b_sobel = sobel(b4_filter.reshape(cols, rows))
-    gradient = r_sobel + g_sobel + b_sobel
-    gradient_subset = gradient[buf:cols - buf, buf:rows - buf]
-    # peak_gradient = peak_local_max(-gradient, num_peaks=2400, min_distance=10, indices=False)
-    # markers = ndi.label(peak_gradient)[0]
+    r_sobel = scharr(b2_filter.reshape(cols, rows))
+    g_sobel = scharr(b3_filter.reshape(cols, rows))
+    b_sobel = scharr(b4_filter.reshape(cols, rows))
+
+    # dealing with edge
+    array_prob_extend = np.full((cols - buf * 2 + 2, rows - buf * 2 + 2), 0)
+    array_prob_extend[1:cols - buf * 2 + 1, 1:rows - buf * 2 + 1] = array_prob
+
+    array_prob_extend[0, 1:rows - buf * 2 + 1] = array_prob[1, 0:rows - buf * 2]
+    array_prob_extend[rows - buf * 2 + 1, 1:rows - buf * 2 + 1] = array_prob[rows - buf * 2 - 2, 0:cols - buf * 2]
+    array_prob_extend[1:rows - buf * 2 + 1, 0] = array_prob[0:rows - buf * 2, 1]
+    array_prob_extend[1:rows - buf * 2 + 1, rows - buf * 2 + 1] = array_prob[0:rows - buf * 2, cols - buf * 2 - 2]
+
+    array_prob_extend[0, 0] = array_prob[1, 1]
+    array_prob_extend[0, cols - buf * 2 + 1] = array_prob[1, cols - buf * 2 - 2]
+    array_prob_extend[rows - buf * 2 + 1, 0] = array_prob[rows - buf * 2 - 2, 1]
+    array_prob_extend[rows - buf * 2 + 1, cols - buf * 2 + 1] = array_prob[rows - buf * 2 - 2, cols - buf * 2 - 2]
+
+    # mask = np.ma.masked_where(array_prob_extend > prob_threshold, array_prob_extend)
+    prob_sobel = scharr(gaussian(array_prob_extend.astype(float), 1, mode='mirror'))
+    gradient_subset = r_sobel[buf:cols - buf, buf:rows - buf] + g_sobel[buf:cols - buf, buf:rows - buf] + \
+                      b_sobel[buf:cols - buf, buf:rows - buf] + prob_sobel[1: cols - 2 * buf + 1,
+                                                                           1:rows - 2 * buf + 1] * prob_scale
 
     # For a 2D image, a connectivity of 1 corresponds to immediate neighbors up, down, left, and right,
     # while a connectivity of 2 also includes diagonal neighbors.
-    segments_watershed = watershed(gradient_subset, markers=2500, connectivity=1, compactness=0).astype(np.int16)
+    segments_watershed = watershed(gradient_subset, markers=6400, connectivity=1, compactness=0.3).astype(np.int16)
 
     # read metadata info
     metadata = gdal.Open(uri_prob_gdal)
@@ -661,6 +681,16 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
             os.remove(out_path)
         logger.warning("No field is detected for {} at {} season".format(tile_id, season))
     else:
+        # check shape index first
+        for i in range(1, np.max(segments_watershed_sieve)):
+            if len(segments_watershed_sieve[segments_watershed_sieve == i]) > 0:
+                condition = np.equal(segments_watershed_sieve, i)
+                # check shape index, and filter out 'uncompact' shape
+                shape_index = 0.25 * perimeter(segments_watershed_sieve == i, neighbourhood=4) / np.sqrt(
+                    len(segments_watershed_sieve[segments_watershed_sieve == i]))
+                if shape_index > shape_threshold:
+                    segments_watershed_sieve[condition] = 0
+
         # then hierachical merging
         # min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
         # array_original_stack = np.dstack((b1, b2, b3, b4))
@@ -673,10 +703,10 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
         # assign -9999 so background pixels won't be merged
         array_original_subset[segments_watershed_sieve == 0] = [-9999, -9999, -9999, -9999]
 
-        g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=1,
+        g = rag_mean_variance_color(array_original_subset, segments_watershed_sieve, connectivity=2,
                                     mode='distance', _include_texture=include_texture)
 
-        segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=vec_std / 3,
+        segments_watershed_merge = merge_hierarchical_customized(segments_watershed_sieve, g, thresh=500,
                                                                  rag_copy=False,
                                                                  in_place_merge=False,
                                                                  _maximum_fieldsize=maximum_field_size,
@@ -850,16 +880,104 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
 
     return True
 
+
+def segmentation_execution_selectedseason(s3_bucket, planet_directory, prob_directory, tile_id, dry_lower_ordinal,
+                                          dry_upper_ordinal, wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
+                                          working_dir, mmu, maximum_field_size, prob_threshold,
+                                          buf, output_s3_prefix, logger, verbose, season):
+    """
+    s3_bucket: s3 bucket name
+    planet_directory: s3 directory for planet composite
+    prob_directory: s3 directory for probability image
+    tile_id: tile id
+    dry_lower_ordinal: lower bound (ordinal date) for dry season
+    dry_upper_ordinal: upper bound (ordinal date) for dry season
+    wet_lower_ordinal: lower bound (ordinal date) for wet season
+    wet_upper_ordinal: lower bound (ordinal date) for wet season
+    tile_col: column of tiles in our coarse layout
+    tile_row: row of tiles in our coarse layout
+    working_dir: outputted directory
+    mmu: minimum mapping units (unit: pixel)
+    maximum_field_size: maximum field size (unit: pixel)
+    prob_threshold:  probability threshold
+    buf: buffer of composite image
+    output_s3_prefix: outputed prefix for segmentation result in s3
+    logger: logger object
+    verbose: True or False, if outputted intermediate results
+    season: the selected season
+    return:
+    True or False
+    """
+
+    uri_prob_gdal = "/vsis3/{}/{}/image_c{}_r{}.tif".format(s3_bucket, prob_directory, str(tile_col), str(tile_row))
+    # segmentation for off-season
+    if season is 'OS':
+        uri_composite_gdal_os = "/vsis3/{}/{}/{}/tile{}_{}_{}.tif".format(s3_bucket, planet_directory, 'OS', tile_id,
+                                                                          dry_lower_ordinal, dry_upper_ordinal)
+        try:
+            segmentation_season(tile_id, 'OS', uri_composite_gdal_os, uri_prob_gdal, working_dir, mmu,
+                                maximum_field_size, prob_threshold, buf, logger, verbose)
+        except (OSError, ClientError, subprocess.CalledProcessError) as e:
+            logger.error("Segmentation failed for tile_id {} at OS season: {})"
+                         .format(tile_id, e))
+
+        ############################################################
+        #             upload compositing image to s3             #
+        ############################################################
+        s3 = boto3.client('s3')
+        out_path_dry = os.path.join(working_dir, 'tile{}_OS_seg.geojson'.format(tile_id))
+        try:
+            s3.upload_file(out_path_dry, s3_bucket, '{}/tile{}_seg.geojson'.format(output_s3_prefix, tile_id))
+        except ClientError as e:
+            logger.error("S3 uploading fails for tile{}_seg.geojson: {}".format(tile_id, e))
+            return False
+
+        if os.path.exists(out_path_dry):
+            os.remove(out_path_dry)
+        else:
+            logger.error("Segmentation fails: couldn't find {}").format(out_path_dry)
+            return False
+
+    # segmentation for growing-season
+    if season is 'GS':
+        uri_composite_gdal_gs = "/vsis3/{}/{}/{}/tile{}_{}_{}.tif".format(s3_bucket, planet_directory, 'GS', tile_id,
+                                                                          wet_lower_ordinal, wet_upper_ordinal)
+        try:
+            segmentation_season(tile_id, 'GS', uri_composite_gdal_gs, uri_prob_gdal, working_dir, mmu,
+                                maximum_field_size, prob_threshold, buf, logger, verbose)
+        except (OSError, ClientError, subprocess.CalledProcessError) as e:
+            logger.error("Segmentation failed for tile_id {} at GS season: {})"
+                         .format(tile_id, e))
+
+        out_path_wet = os.path.join(working_dir, 'tile{}_GS_seg.geojson'.format(tile_id))
+
+        try:
+            s3.upload_file(out_path_wet, s3_bucket, '{}/tile{}_seg.geojson'.format(output_s3_prefix,  tile_id))
+        except ClientError as e:
+            logger.error("S3 uploading fails for tile{}_seg.geojson: {}".format(tile_id, e))
+            return False
+
+        if os.path.exists(out_path_wet):
+            os.remove(out_path_wet)
+        else:
+            logger.error("Segmentation fails: couldn't find {}").format(out_path_wet)
+            return False
+
+    return True
+
+
+
 @click.command()
 @click.option('--config_filename', type=str, default='segmenter_config.yaml', help='The name of the config to use.')
 @click.option('--tile_id', type=int, default=None, help='only used for debug mode, user-defined tile_id')
 @click.option('--csv_pth', type=str, default=None, help='csv path for providing a specified tile list')
 @click.option('--aoi', type=int, default=None, help='specify production AOI id in ghana_tiles.geojson')
 @click.option('--s3_bucket', type=str, default='activemapper', help='s3 bucket name')
-@click.option('--threads_number', type=int, default= 4, help='output folder prefix')
+@click.option('--season', type=str, default='OS', help='which season planet imagery is used, or can use BOTH')
+@click.option('--threads_number', type=int, default=4, help='output folder prefix')
 @click.option('--be_minmax_analysis', is_flag=True, help='if extract min and max from worker labels')
-@click.option('--verbose', is_flag=True, help='if output folder prefix')
-def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_minmax_analysis, verbose):
+@click.option('--verbose', is_flag=True, help='to determine whether to save intermediate images')
+def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, season, threads_number, be_minmax_analysis, verbose):
     # some constants are defined here
     buf = 11 # buffer of composite image
     left_corner_x = -17.541
@@ -890,7 +1008,7 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
             sys.exit()
 
     # read yaml from local
-    with open("/home/ubuntu/source/segmenter_config.yaml", 'r') as yaml_obj:
+    with open("/home/ubuntu/source/{}".format(config_filename), 'r') as yaml_obj:
         params = yaml.safe_load(yaml_obj)['segmenter']
 
     # read yaml from s3
@@ -917,7 +1035,6 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
     dry_upper_ordinal = params['dry_upper_ordinal']  # 2019/02/28
     wet_lower_ordinal = params['wet_lower_ordinal']  # 2018/05/01
     wet_upper_ordinal = params['wet_upper_ordinal']  # 2018/09/30
-
 
     uri_tile = "s3://{}/{}/{}".format(s3_bucket, prefix, tiles_geojson_path)
     gpd_tile = gpd.read_file(uri_tile)
@@ -989,14 +1106,20 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
             (tile_col, tile_row) = get_colrow_geojson(foc_gpd_tile, left_corner_x, left_corner_y, per_tile_width)
 
             # implement segmentation for both seasons
-            segmentation_composition_executor.submit(segmentation_execution_doubleseasons, s3_bucket, planet_directory,
-                                                     prob_directory, tile_id, dry_lower_ordinal, dry_upper_ordinal,
-                                                     wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
-                                                     working_dir, mmu, maximum_field_size, prob_threshold, buf,
-                                                     output_s3_prefix, logger, verbose)
+            if season is 'BOTH':
+                segmentation_composition_executor.submit(segmentation_execution_doubleseasons, s3_bucket, planet_directory,
+                                                         prob_directory, tile_id, dry_lower_ordinal, dry_upper_ordinal,
+                                                         wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
+                                                         working_dir, mmu, maximum_field_size, prob_threshold, buf,
+                                                         output_s3_prefix, logger, verbose)
+            else:
+                segmentation_composition_executor.submit(segmentation_execution_selectedseason, s3_bucket, planet_directory,
+                                                         prob_directory, tile_id, dry_lower_ordinal, dry_upper_ordinal,
+                                                         wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
+                                                         working_dir, mmu, maximum_field_size, prob_threshold, buf,
+                                                         output_s3_prefix, logger, verbose, season)
             logger.info("Progress: has finished segmentation task for {} tiles out of the {} total tiles "
                         .format(i, len(alltiles)))
-
 
         # await all tile finished
         segmentation_composition_executor.drain()
@@ -1031,10 +1154,16 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, threads_number, be_m
         print("tile_row is {}".format(tile_row))
 
         try:
-            segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_directory, tile_id, dry_lower_ordinal,
-                                                 dry_upper_ordinal, wet_lower_ordinal, wet_upper_ordinal, tile_col,
-                                                 tile_row, working_dir, mmu, maximum_field_size, prob_threshold, buf,
-                                                 output_s3_prefix, logger, verbose)
+            if season is 'BOTH':
+                segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_directory, tile_id, dry_lower_ordinal,
+                                                     dry_upper_ordinal, wet_lower_ordinal, wet_upper_ordinal, tile_col,
+                                                     tile_row, working_dir, mmu, maximum_field_size, prob_threshold, buf,
+                                                     output_s3_prefix, logger, verbose)
+            else:
+                segmentation_execution_selectedseason(s3_bucket, planet_directory, prob_directory, tile_id, dry_lower_ordinal,
+                                                      dry_upper_ordinal, wet_lower_ordinal, wet_upper_ordinal, tile_col,
+                                                      tile_row, working_dir, mmu, maximum_field_size, prob_threshold, buf,
+                                                      output_s3_prefix, logger, verbose, season)
         except (OSError, ClientError, subprocess.CalledProcessError) as e:
             logger.error("Segmentation failed for tile_id {}, and the total finished tiles is {} ({}))"
                          .format(tile_id,  1, datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')))
