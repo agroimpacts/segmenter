@@ -54,3 +54,9 @@ The steps to running a segmentation procedure are as follows:
     ```
     
     The result would be saved to the yaml in the workingfolder your just changed.
+
+7. run single tile test (you can add --verbose to save intermediate result for each step):
+   ```bash
+   conda activate cv_python3
+   python PostClassificationSegmentation.py --tile_id=565672 --aoi=8
+   

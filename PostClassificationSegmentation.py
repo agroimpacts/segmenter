@@ -19,9 +19,9 @@ import logging
 import os
 import numpy as np
 from osgeo import gdal_array
-from skimage.filters import sobel
+from skimage.filters import sobel, scharr
 from sklearn import preprocessing
-from skimage.segmentation import slic, watershed
+from skimage.segmentation import watershed
 from osgeo import ogr
 import cv2 as cv
 from skimage.future import graph
