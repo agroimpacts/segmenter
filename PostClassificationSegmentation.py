@@ -878,6 +878,7 @@ def segmentation_execution_doubleseasons(s3_bucket, planet_directory, prob_direc
         logger.error("Segmentation fails: couldn't find {}").format(out_path_wet)
         return False
 
+    logger.info("Progress: finished segmentation for tile_id {} ({})".format(tile_id,datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')))
     return True
 
 
@@ -920,6 +921,7 @@ def segmentation_execution_selectedseason(s3_bucket, planet_directory, prob_dire
         except (OSError, ClientError, subprocess.CalledProcessError) as e:
             logger.error("Segmentation failed for tile_id {} at OS season: {})"
                          .format(tile_id, e))
+            return False
 
         ############################################################
         #             upload compositing image to s3             #
@@ -948,6 +950,7 @@ def segmentation_execution_selectedseason(s3_bucket, planet_directory, prob_dire
         except (OSError, ClientError, subprocess.CalledProcessError) as e:
             logger.error("Segmentation failed for tile_id {} at GS season: {})"
                          .format(tile_id, e))
+            return False
 
         out_path_wet = os.path.join(working_dir, 'tile{}_GS_seg.geojson'.format(tile_id))
 
@@ -962,7 +965,8 @@ def segmentation_execution_selectedseason(s3_bucket, planet_directory, prob_dire
         else:
             logger.error("Segmentation fails: couldn't find {}").format(out_path_wet)
             return False
-
+    
+    logger.info("Progress: finished segmentation for tile_id {} ({})".format(tile_id,datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')))
     return True
 
 
@@ -1118,8 +1122,6 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, season, threads_numb
                                                          wet_lower_ordinal, wet_upper_ordinal, tile_col, tile_row,
                                                          working_dir, mmu, maximum_field_size, prob_threshold, buf,
                                                          output_s3_prefix, logger, verbose, season)
-            logger.info("Progress: has finished segmentation task for {} tiles out of the {} total tiles "
-                        .format(i, len(alltiles)))
 
         # await all tile finished
         segmentation_composition_executor.drain()
