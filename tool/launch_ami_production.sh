@@ -6,7 +6,7 @@ INAME="***REMOVED***"
 OWNER="***REMOVED***"
 SDASIZE="100"
 IAM="activemapper_planet_readwriteS3"
-VALIDUNTIL="2019-12-31T23:00:00"
+VALIDUNTIL="2020-03-01T23:00:00"
 aws ec2 run-instances --image-id $AMID --count 1 --instance-type $ITYPE \
 --iam-instance-profile Name=$IAM --key-name $KEYNAME --security-groups $SECURITY \
 --monitoring Enabled=true --block-device-mappings \
