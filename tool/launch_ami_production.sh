@@ -1,12 +1,12 @@
-AMID="ami-069801c7083bd7553"
+AMID="ami-010d3cc60ec3ff21b"
 ITYPE="t2.xlarge"
 KEYNAME="mapper_key_pair"
 SECURITY="airg-security"
-INAME="segmenter_9"
+INAME="segmentation_aoi16"
 OWNER="554330630998"
 SDASIZE="100"
 IAM="activemapper_planet_readwriteS3"
-VALIDUNTIL="2019-12-31T23:00:00"
+VALIDUNTIL="2020-03-01T23:00:00"
 aws ec2 run-instances --image-id $AMID --count 1 --instance-type $ITYPE \
 --iam-instance-profile Name=$IAM --key-name $KEYNAME --security-groups $SECURITY \
 --monitoring Enabled=true --block-device-mappings \
