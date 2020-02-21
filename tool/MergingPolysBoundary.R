@@ -16,9 +16,9 @@ if(!dir.exists(src.folder)){
 }
 
 # step 1: download
-s3_url <- paste0('s3://', bucket, '/', segmentation_prefix)
-download.cmd <- paste0('aws s3 cp ', s3_url,' ', file.path(dst.folder, paste0("aoi", targeted_aoi)), ' --recursive')
-system(download.cmd)
+# s3_url <- paste0('s3://', bucket, '/', segmentation_prefix)
+# download.cmd <- paste0('aws s3 cp ', s3_url,' ', file.path(dst.folder, paste0("aoi", targeted_aoi)), ' --recursive')
+# system(download.cmd)
 
 # step 2: making original collection for aoi
 lf <- list.files(src.folder)
@@ -92,8 +92,12 @@ intersect_line <- function(x1, x2, y1, y2, poly.collect){
           # print(polys_intersect)
           tmp <- suppressWarnings(st_union(polys_intersect[x, ], polys_intersect[to.merge, ]))
           tmp %>% select(c('id', 'tile')) 
+        }else{
+          # has intersected polygons but no paired with two tile ids
+          polys_intersect[x, ]
         }
       }else{
+        # no intersected polygons
         polys_intersect[x, ]
       }
     }
@@ -102,7 +106,8 @@ intersect_line <- function(x1, x2, y1, y2, poly.collect){
   merge.poly_whole <- do.call(rbind, merge.polys)
   
   # delete intsected polys
-  poly.collect <- poly.collect[-polys_intersect$id]
+  # poly.collect <- poly.collect[-polys_intersect$id]
+  poly.collect <- poly.collect[!(poly.collect$id %in% polys_intersect$id), ]
   
   # add after-merge polys
   poly.collect <- rbind(poly.collect, merge.poly_whole[, c('id', 'tile')])
