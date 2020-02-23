@@ -1,13 +1,18 @@
+# This script is used to download segmentation geojson, and merge polygons at 
+# the boundary. The output is a combined per-aoi geojson. 
+# This script is applied after the segmentation production is finished
+# Author: Su Ye
+
 library("aws.s3")
 library("sf")
 library("dplyr")
 
 bucket <- 'activemapper'
-targeted_aoi <- '8' # change it as needed
-aoi_file <- 'aois.geojson'
-segmentation_prefix <- 'segmentation_2'
+targeted_aoi <- '3' # change it as needed
+aoi_file <- 'ghana_tiles_merged.geojson'
+segmentation_prefix <- 'segmentation_V2'
 tile_diam <- 0.005 / 200  * 2000
-
+download.needed <- FALSE
 # change folder name as your setting
 dst.folder <- '/Users/coloury/Dropbox/MappingAfrica/segmentation/polygon_merging'
 src.folder <- file.path(dst.folder, paste0("aoi", targeted_aoi))
@@ -15,35 +20,57 @@ if(!dir.exists(src.folder)){
   dir.create(src.folder)
 }
 
+# read aoi definition geojson
+aoi_extent <- st_read(file.path(dst.folder, aoi_file))
+aoi_extent_selected <- aoi_extent %>% filter(production_aoi == targeted_aoi)
 # step 1: download
-# s3_url <- paste0('s3://', bucket, '/', segmentation_prefix)
-# download.cmd <- paste0('aws s3 cp ', s3_url,' ', file.path(dst.folder, paste0("aoi", targeted_aoi)), ' --recursive')
-# system(download.cmd)
+if (download.needed == True){
+  for(i in aoi_extent_selected$tile){
+    s3_url <- paste0('s3://', bucket, '/', segmentation_prefix, '/tile', i, '_seg.geojson')
+    download.cmd <- paste0('aws s3 cp ', s3_url,' ', file.path(dst.folder, paste0("aoi", targeted_aoi)))
+    system(download.cmd)
+  }
+}
+
 
 # step 2: making original collection for aoi
 lf <- list.files(src.folder)
 
-poly.list <- lapply(1:length(lf), function(x){
-  polys <- st_read(file.path(file.path(dst.folder, paste0("aoi", targeted_aoi)),  
-                             lf[x]))
-  polys[, 'tile'] <- substring(lf[x], 5, 10)
-  polys <- st_as_sf(polys)
-  polys
-})
+if(!file.exists(file.path(dst.folder, paste0("aoi", targeted_aoi, "_unmerged.geojson")))){
+  poly.list <- lapply(1:length(lf), function(x){
+    polys <- st_read(file.path(file.path(dst.folder, paste0("aoi", targeted_aoi)),  
+                               lf[x]))
+    polys[, 'tile'] <- substring(lf[x], 5, 10)
+    polys <- st_as_sf(polys)
+    polys
+  })
 
-poly.collect <- st_as_sf(do.call(rbind, poly.list)) %>% mutate(id=row_number())
+  # all polygons for aoi were collected as sf 
+  poly.collect <- st_as_sf(do.call(rbind, poly.list)) %>% mutate(id=row_number())
 
-dsn.dir <- file.path(dst.folder, paste0("aoi", targeted_aoi, "_unmerged.geojson"))
-st_write(poly.collect, delete_dsn = TRUE, dsn.dir)
+  # check which tiles polygons are missing from downloading. The missing tiles might 
+  # be two reasons: 1) failure to process due to unknown bug; 2) no field in tile
+  # the operator needs to compare the missing tile list with the log file produced for each
+  # production, and found those tiles that fails to be recorded in the logging system, 
+  # these tiles should be due to some unknown bugs that needs to be double checked
+  outputted.tiles <- unique(poly.collect$tile)
+  original.tiles <- unique(aoi_extent_selected$tile)
+  # original.tiles[!(original.tiles %in% outputted.tiles)]
+  print(paste0("The missing tiles for aoi ",  targeted_aoi, " are: ", 
+               paste(original.tiles[!(original.tiles %in% outputted.tiles)], 
+                                                collapse = ' ')))
+  # save unmerged
+  dsn.dir <- file.path(dst.folder, paste0("aoi", targeted_aoi, "_unmerged.geojson"))
+  st_write(poly.collect, delete_dsn = TRUE, dsn.dir)
+}else{
+  poly.collect <- st_read(file.path(dst.folder, paste0("aoi", targeted_aoi, "_unmerged.geojson")))
+}
 
 # st_write(poly.collect, '/Users/coloury/Dropbox/MappingAfrica/segmentation/polygon_merging/aoi8_collect.geojson')
+aoi_bbox <- st_bbox(aoi_extent_selected)
 
-# read aoi definition geojson
-aoi.boundary <- st_read(file.path(dst.folder, aoi_file))
-aoi_bbox <- st_bbox(aoi.boundary[aoi.boundary$aois==8,])
-
-nrow <- (as.numeric(aoi_bbox['xmax']) - as.numeric(aoi_bbox['xmin']))/ tile_diam - 1
-ncol <- (as.numeric(aoi_bbox['xmax']) - as.numeric(aoi_bbox['xmin']))/ tile_diam - 1
+nrow <- (as.numeric(aoi_bbox['ymax']) - as.numeric(aoi_bbox['ymin']))/ tile_diam
+ncol <- (as.numeric(aoi_bbox['xmax']) - as.numeric(aoi_bbox['xmin']))/ tile_diam
 
 intersect_line <- function(x1, x2, y1, y2, poly.collect){
   p1 <- rbind(c(x1,y1), c(x1, y2), c(x2, y2), c(x2, y1), c(x1,y1))
@@ -116,26 +143,25 @@ intersect_line <- function(x1, x2, y1, y2, poly.collect){
 }
 
 # step 3: merging boundary per row and per column
-for(nnrow in 1: nrow){
+for(nncol in 1: ncol){
   # adding a buffer of a pixel
-  x1 = as.numeric(aoi_bbox['xmin']) + as.numeric(tile_diam) * nnrow - 0.005 / 200
-  x2 = as.numeric(aoi_bbox['xmin']) + as.numeric(tile_diam) * nnrow + 0.005 / 200
+  x1 = as.numeric(aoi_bbox['xmin']) + as.numeric(tile_diam) * nncol - 0.005 / 200
+  x2 = as.numeric(aoi_bbox['xmin']) + as.numeric(tile_diam) * nncol + 0.005 / 200
   y1 = as.numeric(aoi_bbox['ymin']) 
   y2 = as.numeric(aoi_bbox['ymax']) 
-  poly.collect <- intersect_line(x1=x1, x2=x2, y1=y1, y2=y2, poly.collect=poly.collect)
+  poly.collect <- suppressMessages(intersect_line(x1=x1, x2=x2, y1=y1, y2=y2, 
+                                                  poly.collect=poly.collect))
 }
 
-for(nncol in 1: ncol){
+for(nnrow in 1: nrow){
   # adding a buffer of a pixel
   x1 = as.numeric(aoi_bbox['xmin']) 
   x2 = as.numeric(aoi_bbox['xmax']) 
-  y1 = as.numeric(aoi_bbox['ymin']) + as.numeric(tile_diam) * nncol - 0.005 / 200
-  y2 = as.numeric(aoi_bbox['ymin']) + as.numeric(tile_diam) * nncol + 0.005 / 200
-  poly.collect <- intersect_line(x1=x1, x2=x2, y1=y1, y2=y2, poly.collect=poly.collect)
+  y1 = as.numeric(aoi_bbox['ymin']) + as.numeric(tile_diam) * nnrow - 0.005 / 200
+  y2 = as.numeric(aoi_bbox['ymin']) + as.numeric(tile_diam) * nnrow + 0.005 / 200
+  poly.collect <- suppressMessages(intersect_line(x1=x1, x2=x2, y1=y1, y2=y2, 
+                                                  poly.collect=poly.collect))
 }
-
-# st_write(merge.poly_whole, delete_dsn = TRUE, '/Users/coloury/Dropbox/MappingAfrica/segmentation/polygon_merging/aoi8_intersect_union.geojson')
-# st_write(polys_intersect, delete_dsn = TRUE, '/Users/coloury/Dropbox/MappingAfrica/segmentation/polygon_merging/aoi8_intersect_origin.geojson')
 
 dsn.dir <- file.path(dst.folder, paste0("aoi", targeted_aoi, "_boundarymerge.geojson"))
 st_write(poly.collect, delete_dsn = TRUE, dsn.dir)
