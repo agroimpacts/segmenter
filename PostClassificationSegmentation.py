@@ -530,8 +530,8 @@ def segmentation_season(tile_id, season, uri_composite_gdal, uri_prob_gdal, work
     """
 
     proj = ''
-    prob_scale = 60 # scale for probability map to be added to original bands
-    shape_threshold = 2.7
+    prob_scale = 30 # scale for probability map to be added to original bands
+    shape_threshold = 2.3
     include_texture = False
 
     # a quick way to read image as numpy array
@@ -1023,7 +1023,8 @@ def main(config_filename, tile_id, csv_pth, aoi, s3_bucket, season, threads_numb
 
     prefix = params['planet_prefix']
     planet_directory = params['planet_directory']
-    prob_directory = params['prob_directory'] + '/{}_whole'.format(aoi) 
+    # prob_directory = params['prob_directory'] + '/{}_whole'.format(aoi)
+    prob_directory = params['prob_directory'] + '/' + params['prob_subfolder']
     tiles_geojson_path = params['tile_geojson_path']
     mmu = params['mmu']
     maximum_field_size = params['max_field_size']
